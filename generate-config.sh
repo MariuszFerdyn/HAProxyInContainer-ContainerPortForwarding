@@ -42,7 +42,7 @@ EOF
 generate_config
 
 # Execute HAProxy with the remaining arguments
-exec "$@"
+"$@" &
 
 
 # Display config
