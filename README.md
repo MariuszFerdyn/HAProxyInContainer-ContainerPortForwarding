@@ -5,6 +5,7 @@ Easily configure backend hosts and local ports using environment variables, maki
 # Build the conatiner or download
 ```
 docker build -t haproxy-env-config .
+docker pull mafamafa/haproxy-env-config:202501271157
 ```
 # Run The container
 ```
