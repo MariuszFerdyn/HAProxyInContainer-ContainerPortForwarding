@@ -37,3 +37,7 @@ docker exec -it port-forwarder /bin/bash
 tcpdump
 ```
 
+## Problems
+### exec /generate-config.sh: no such file or directory
+build under linux, not Windows. Or just docker pull
+
