@@ -59,4 +59,4 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
-exec bash -c 'while true; do echo "$(date) - HAProxy Stats:"; echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio; echo "----------------------------------------"; sleep 60; done'
+exec bash -c 'while true; do echo "$(date) - HAProxy Frontend Stats:"; echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND" | awk -F, '\''{print $1","$8","$9","$7}'\'' | awk -F, '\''{printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n", $1, $4, $2, $3}'\''; echo "----------------------------------------"; sleep 60; done'
