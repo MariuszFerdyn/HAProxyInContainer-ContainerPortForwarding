@@ -7,6 +7,7 @@ generate_config() {
 global
     daemon
     maxconn 256
+    stats socket /var/run/haproxy.sock mode 600 level admin
 
 defaults
     mode tcp
@@ -57,5 +58,5 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
     echo "Webhook response: $webhook_response"
 fi
 
-# Keep container running
-exec tail -f /dev/null
+# Keep container running and showing statistics
+exec bash -c 'while true; do echo "$(date) - HAProxy Stats:"; echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio; echo "----------------------------------------"; sleep 60; done'
