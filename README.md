@@ -41,4 +41,3 @@ tcpdump
 ## Problems
 ### exec /generate-config.sh: no such file or directory
 build under linux, not Windows. Or just docker pull
-
