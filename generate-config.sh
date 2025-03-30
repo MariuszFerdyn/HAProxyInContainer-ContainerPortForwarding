@@ -59,4 +59,45 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
-exec bash -c 'declare -A prev_bytes=(); while true; do echo "$(date) - HAProxy Frontend Stats:"; current_stats=$(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); echo "$current_stats" | awk -F, '\''{print $1","$8","$9","$7}'\'' | awk -F, '\''{printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n", $1, $4, $2, $3}'\''; echo "$current_stats" | while IFS="," read -r line; do frontend=$(echo "$line" | cut -d, -f1); bytes_in=$(echo "$line" | cut -d, -f8); if [[ -n "${prev_bytes[$frontend]}" && "$bytes_in" -gt "${prev_bytes[$frontend]}" ]]; then if [[ -n "$WEBHOOKTRAFFIC" ]]; then echo "Traffic increase detected for $frontend: ${prev_bytes[$frontend]} → $bytes_in bytes"; webhook_response=$(curl -v -s -X POST "$WEBHOOKTRAFFIC" -d "frontend=$frontend&bytes_in=$bytes_in&previous=${prev_bytes[$frontend]}" 2>&1); echo "Webhook response: $webhook_response"; else echo "Traffic increase detected for $frontend: ${prev_bytes[$frontend]} → $bytes_in bytes (WEBHOOKTRAFFIC not defined)"; fi; fi; prev_bytes[$frontend]=$bytes_in; done; echo "----------------------------------------"; sleep 60; done'
+exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while true; do 
+  echo "$(date) - HAProxy Frontend Stats:"; 
+  current_stats=$(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
+  
+  # Display current stats
+  echo "$current_stats" | awk -F, '\''{print $1","$8","$9","$7}'\'' | 
+  awk -F, '\''{printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n", $1, $4, $2, $3}'\''; 
+  
+  # Process each frontend
+  echo "$current_stats" | while IFS="," read -r line; do 
+    frontend=$(echo "$line" | cut -d, -f1); 
+    bytes_in=$(echo "$line" | cut -d, -f8); 
+    bytes_out=$(echo "$line" | cut -d, -f9);
+    
+    # Debug info
+    echo "DEBUG: Frontend=$frontend, Current bytes_in=$bytes_in, Previous bytes_in=${prev_bytes_in[$frontend]:-0}"
+    echo "DEBUG: Frontend=$frontend, Current bytes_out=$bytes_out, Previous bytes_out=${prev_bytes_out[$frontend]:-0}"
+    
+    # Check for traffic increase
+    if [[ -n "${prev_bytes_in[$frontend]}" && "$bytes_in" -gt "${prev_bytes_in[$frontend]}" ]] || 
+       [[ -n "${prev_bytes_out[$frontend]}" && "$bytes_out" -gt "${prev_bytes_out[$frontend]}" ]]; then
+      
+      echo "ALERT: Traffic increase detected for $frontend: Bytes In ${prev_bytes_in[$frontend]:-0} → $bytes_in, Bytes Out ${prev_bytes_out[$frontend]:-0} → $bytes_out"
+      
+      if [[ -n "$WEBHOOKTRAFFIC" ]]; then
+        echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
+        webhook_response=$(curl -v -s -X POST "$WEBHOOKTRAFFIC" \
+          -d "frontend=$frontend&bytes_in=$bytes_in&previous_in=${prev_bytes_in[$frontend]:-0}&bytes_out=$bytes_out&previous_out=${prev_bytes_out[$frontend]:-0}" 2>&1)
+        echo "WEBHOOK RESPONSE: $webhook_response"
+      else
+        echo "ALERT: Traffic increase detected but WEBHOOKTRAFFIC not defined."
+      fi
+    fi
+    
+    # Update previous values
+    prev_bytes_in[$frontend]=$bytes_in
+    prev_bytes_out[$frontend]=$bytes_out
+  done; 
+  
+  echo "----------------------------------------"; 
+  sleep 60; 
+done'
