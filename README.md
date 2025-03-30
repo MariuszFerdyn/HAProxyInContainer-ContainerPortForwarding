@@ -22,8 +22,8 @@ docker container inspect <container_id> --format='{{.NetworkSettings.IPAddress}}
 ```
 ## Telnet to the port
 ```
-curl -k http://localhost
-curl -k https://localhost
+curl -k http://localhost:80
+curl -k http://localhost:443
 ```
 The expected outputs in this example:
 ```
