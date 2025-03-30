@@ -61,14 +61,19 @@ fi
 # Keep container running and showing statistics
 exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while true; do 
   echo "$(date) - HAProxy Frontend Stats:"; 
-  current_stats=$(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
+  mapfile -t current_stats < <(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
   
   # Display current stats
-  echo "$current_stats" | awk -F, '\''{print $1","$8","$9","$7}'\'' | 
-  awk -F, '\''{printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n", $1, $4, $2, $3}'\''; 
+  for line in "${current_stats[@]}"; do
+    frontend=$(echo "$line" | cut -d, -f1);
+    bytes_in=$(echo "$line" | cut -d, -f8);
+    bytes_out=$(echo "$line" | cut -d, -f9);
+    connections=$(echo "$line" | cut -d, -f7);
+    printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n" "$frontend" "$connections" "$bytes_in" "$bytes_out";
+  done
   
   # Process each frontend
-  echo "$current_stats" | while IFS="," read -r line; do 
+  for line in "${current_stats[@]}"; do
     frontend=$(echo "$line" | cut -d, -f1); 
     bytes_in=$(echo "$line" | cut -d, -f8); 
     bytes_out=$(echo "$line" | cut -d, -f9);
@@ -96,7 +101,7 @@ exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while t
     # Update previous values
     prev_bytes_in[$frontend]=$bytes_in
     prev_bytes_out[$frontend]=$bytes_out
-  done; 
+  done
   
   echo "----------------------------------------"; 
   sleep 60; 
