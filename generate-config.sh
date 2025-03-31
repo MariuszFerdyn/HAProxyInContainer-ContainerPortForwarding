@@ -63,6 +63,10 @@ exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while t
   echo "$(date) - HAProxy Frontend Stats:"; 
   mapfile -t current_stats < <(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
   
+  # Set default threshold if environment variable not set
+  THRESHOLD=${WEBHOOKTRAFFICAMOUNT:-2000}
+  echo "Current threshold for alerts: $THRESHOLD bytes"
+  
   # Display current stats
   for line in "${current_stats[@]}"; do
     frontend=$(echo "$line" | cut -d, -f1);
@@ -82,20 +86,26 @@ exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while t
     echo "DEBUG: Frontend=$frontend, Current bytes_in=$bytes_in, Previous bytes_in=${prev_bytes_in[$frontend]:-0}"
     echo "DEBUG: Frontend=$frontend, Current bytes_out=$bytes_out, Previous bytes_out=${prev_bytes_out[$frontend]:-0}"
     
-    # Check for traffic increase
-    if [[ -n "${prev_bytes_in[$frontend]}" && "$bytes_in" -gt "${prev_bytes_in[$frontend]}" ]] || 
-       [[ -n "${prev_bytes_out[$frontend]}" && "$bytes_out" -gt "${prev_bytes_out[$frontend]}" ]]; then
+    # Calculate traffic increase
+    bytes_in_diff=$((bytes_in - ${prev_bytes_in[$frontend]:-0}))
+    bytes_out_diff=$((bytes_out - ${prev_bytes_out[$frontend]:-0}))
+    
+    # Check for traffic increase above threshold
+    if [[ -n "${prev_bytes_in[$frontend]}" && "$bytes_in_diff" -gt "$THRESHOLD" ]] || 
+       [[ -n "${prev_bytes_out[$frontend]}" && "$bytes_out_diff" -gt "$THRESHOLD" ]]; then
       
-      echo "ALERT: Traffic increase detected for $frontend: Bytes In ${prev_bytes_in[$frontend]:-0} → $bytes_in, Bytes Out ${prev_bytes_out[$frontend]:-0} → $bytes_out"
+      echo "ALERT: Traffic increase exceeds threshold ($THRESHOLD) for $frontend: Bytes In ${prev_bytes_in[$frontend]:-0} → $bytes_in (diff: $bytes_in_diff), Bytes Out ${prev_bytes_out[$frontend]:-0} → $bytes_out (diff: $bytes_out_diff)"
       
       if [[ -n "$WEBHOOKTRAFFIC" ]]; then
         echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
         webhook_response=$(curl -v -s -X POST "$WEBHOOKTRAFFIC" \
-          -d "frontend=$frontend&bytes_in=$bytes_in&previous_in=${prev_bytes_in[$frontend]:-0}&bytes_out=$bytes_out&previous_out=${prev_bytes_out[$frontend]:-0}" 2>&1)
+          -d "frontend=$frontend&bytes_in=$bytes_in&previous_in=${prev_bytes_in[$frontend]:-0}&bytes_out=$bytes_out&previous_out=${prev_bytes_out[$frontend]:-0}&bytes_in_diff=$bytes_in_diff&bytes_out_diff=$bytes_out_diff&threshold=$THRESHOLD" 2>&1)
         echo "WEBHOOK RESPONSE: $webhook_response"
       else
         echo "ALERT: Traffic increase detected but WEBHOOKTRAFFIC not defined."
       fi
+    elif [[ "$bytes_in_diff" -gt 0 || "$bytes_out_diff" -gt 0 ]]; then
+      echo "INFO: Traffic increase below threshold for $frontend: Bytes In diff: $bytes_in_diff, Bytes Out diff: $bytes_out_diff (threshold: $THRESHOLD)"
     fi
     
     # Update previous values
