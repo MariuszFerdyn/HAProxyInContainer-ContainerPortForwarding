@@ -5,11 +5,11 @@ Easily configure backend hosts and local ports using environment variables, maki
 # Build the conatiner or download
 ```
 docker build -t haproxy-env-config .
-docker pull docker pull mafamafa/haproxy-env-config:202503310815
+docker pull docker pull mafamafa/haproxy-env-config:202503311104
 ```
 # Run The container
 ```
-docker run --privileged -p 80:80 -p 443:443 -e BACKEND_HOST1=212.77.98.9:80 -e LOCAL_PORT1=80 -e BACKEND_HOST2=108.138.7.70:443 -e LOCAL_PORT2=443 -e WEBHOOKAFTERSTART=http://fast-sms.net/a.txt -e WEBHOOKTRAFFIC=http://fast-sms.net/a.txt -e WEBHOOKTRAFFICAMOUNT=2000 --name haproxy mafamafa/haproxy-env-config:202503310815
+docker run --privileged -p 80:80 -p 443:443 -e BACKEND_HOST1=212.77.98.9:80 -e LOCAL_PORT1=80 -e BACKEND_HOST2=108.138.7.70:443 -e LOCAL_PORT2=443 -e WEBHOOKAFTERSTART=http://fast-sms.net/a.txt -e WEBHOOKTRAFFIC=http://fast-sms.net/a.txt -e WEBHOOKTRAFFICAMOUNT=2000 --name haproxy mafamafa/haproxy-env-config:202503311104
 ```
 - WEBHOOKAFTERSTART informs that container started and it is optional.
 - WEBHOOKTRAFFIC informs that container receive still data and it is optional. It is executes every minute.
