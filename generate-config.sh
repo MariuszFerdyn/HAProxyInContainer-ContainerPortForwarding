@@ -90,11 +90,10 @@ exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while t
     bytes_in_diff=$((bytes_in - ${prev_bytes_in[$frontend]:-0}))
     bytes_out_diff=$((bytes_out - ${prev_bytes_out[$frontend]:-0}))
     
-    # Check for traffic increase above threshold
-    if [[ -n "${prev_bytes_in[$frontend]}" && "$bytes_in_diff" -gt "$THRESHOLD" ]] || 
-       [[ -n "${prev_bytes_out[$frontend]}" && "$bytes_out_diff" -gt "$THRESHOLD" ]]; then
+    # Check for traffic increase above threshold - based only on Bytes In
+    if [[ -n "${prev_bytes_in[$frontend]}" && "$bytes_in_diff" -gt "$THRESHOLD" ]]; then
       
-      echo "ALERT: Traffic increase exceeds threshold ($THRESHOLD) for $frontend: Bytes In ${prev_bytes_in[$frontend]:-0} → $bytes_in (diff: $bytes_in_diff), Bytes Out ${prev_bytes_out[$frontend]:-0} → $bytes_out (diff: $bytes_out_diff)"
+      echo "ALERT: Traffic increase exceeds threshold ($THRESHOLD) for $frontend: Bytes In ${prev_bytes_in[$frontend]:-0} → $bytes_in (diff: $bytes_in_diff)"
       
       if [[ -n "$WEBHOOKTRAFFIC" ]]; then
         echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
@@ -104,8 +103,8 @@ exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while t
       else
         echo "ALERT: Traffic increase detected but WEBHOOKTRAFFIC not defined."
       fi
-    elif [[ "$bytes_in_diff" -gt 0 || "$bytes_out_diff" -gt 0 ]]; then
-      echo "INFO: Traffic increase below threshold for $frontend: Bytes In diff: $bytes_in_diff, Bytes Out diff: $bytes_out_diff (threshold: $THRESHOLD)"
+    elif [[ "$bytes_in_diff" -gt 0 ]]; then
+      echo "INFO: Traffic increase below threshold for $frontend: Bytes In diff: $bytes_in_diff (threshold: $THRESHOLD)"
     fi
     
     # Update previous values
