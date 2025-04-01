@@ -2,7 +2,7 @@
 FROM haproxy:2.3
 
 # Install bash for script execution
-RUN apt-get update && apt-get install -y bash && apt-get install -y tcpdump curl socat && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y bash && apt-get install -y tcpdump curl socat iproute2 net-tools && rm -rf /var/lib/apt/lists/*
 
 # Create directory for config
 RUN mkdir -p /usr/local/etc/haproxy
