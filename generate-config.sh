@@ -43,6 +43,22 @@ EOF
 generate_config
 
 # Execute HAProxy with the remaining arguments
+"$@" &
+
+
+# Display config
+echo -e "---***--- HAPROXY - Config ---***---"
+cat /usr/local/etc/haproxy/haproxy.cfg
+echo -e "---***--- *************** ---****---"
+
+# Send webhook notification if URL is provided
+if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
+    echo -e "\nSending webhook notification to $WEBHOOKAFTERSTART..."
+    webhook_response=$(curl -s -X POST "$WEBHOOKAFTERSTART" -H "Content-Type: application/json" -d "{\"status\":\"container_started\", \"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}")
+    echo "Webhook response: $webhook_response"
+fi
+
+# Keep container running and showing statistics
 echo "--- ENVIRONMENT VARIABLES ver 1.04 ---"
 env | sort
 echo "--------------------------------------"
