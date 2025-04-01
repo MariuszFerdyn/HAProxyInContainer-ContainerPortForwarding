@@ -59,7 +59,6 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
-# Keep container running and showing statistics
 echo "--- ENVIRONMENT VARIABLES ver 1.04 ---"
 env | sort
 echo "--------------------------------------"
@@ -96,16 +95,23 @@ get_net_stats() {
   # Extract InOctets and OutOctets from netstat -s
   local in_octets=$(netstat -s | grep "InOctets:" | awk "{print \$2}")
   local out_octets=$(netstat -s | grep "OutOctets:" | awk "{print \$2}")
+  local tcp_rcv_coalesce=$(netstat -s | grep "TCPRcvCoalesce:" | awk "{print \$2}")
+  local tcp_orig_data_sent=$(netstat -s | grep "TCPOrigDataSent:" | awk "{print \$2}")
+  local tcp_delivered=$(netstat -s | grep "TCPDelivered:" | awk "{print \$2}")
   
-  echo "$in_octets $out_octets"
+  echo "$in_octets $out_octets $tcp_rcv_coalesce $tcp_orig_data_sent $tcp_delivered"
 }
 
 # Get initial values
 initial_stats=($(get_net_stats))
 prev_total_in=${initial_stats[0]}
 prev_total_out=${initial_stats[1]}
+prev_tcp_rcv_coalesce=${initial_stats[2]:-0}
+prev_tcp_orig_data_sent=${initial_stats[3]:-0}
+prev_tcp_delivered=${initial_stats[4]:-0}
 
 echo "Initial network stats - In: $prev_total_in bytes, Out: $prev_total_out bytes"
+echo "Initial TCP stats - RcvCoalesce: $prev_tcp_rcv_coalesce, OrigDataSent: $prev_tcp_orig_data_sent, Delivered: $prev_tcp_delivered"
 
 while true; do 
   # Set default threshold if environment variable not set
@@ -118,19 +124,32 @@ while true; do
   current_stats=($(get_net_stats))
   current_total_in=${current_stats[0]}
   current_total_out=${current_stats[1]}
+  current_tcp_rcv_coalesce=${current_stats[2]:-0}
+  current_tcp_orig_data_sent=${current_stats[3]:-0}
+  current_tcp_delivered=${current_stats[4]:-0}
   
   # Calculate differences since last check
   total_in_diff=$((current_total_in - prev_total_in))
   total_out_diff=$((current_total_out - prev_total_out))
+  tcp_rcv_coalesce_diff=$((current_tcp_rcv_coalesce - prev_tcp_rcv_coalesce))
+  tcp_orig_data_sent_diff=$((current_tcp_orig_data_sent - prev_tcp_orig_data_sent))
+  tcp_delivered_diff=$((current_tcp_delivered - prev_tcp_delivered))
   
   # Update previous values
   prev_total_in=$current_total_in
   prev_total_out=$current_total_out
+  prev_tcp_rcv_coalesce=$current_tcp_rcv_coalesce
+  prev_tcp_orig_data_sent=$current_tcp_orig_data_sent
+  prev_tcp_delivered=$current_tcp_delivered
   
   # Show overall traffic statistics
   echo -e "\n--- Overall Network Traffic ---"
   echo "Total Incoming Bytes: $current_total_in (+$total_in_diff since last check)"
   echo "Total Outgoing Bytes: $current_total_out (+$total_out_diff since last check)"
+  echo -e "\n--- TCP Statistics ---"
+  echo "TCPRcvCoalesce: $current_tcp_rcv_coalesce (+$tcp_rcv_coalesce_diff)"
+  echo "TCPOrigDataSent: $current_tcp_orig_data_sent (+$tcp_orig_data_sent_diff)"
+  echo "TCPDelivered: $current_tcp_delivered (+$tcp_delivered_diff)"
   
   # Show HAProxy frontend stats
   echo -e "\n--- HAProxy Frontend Stats ---"
@@ -169,7 +188,7 @@ while true; do
     if [[ -n "$WEBHOOKTRAFFIC" ]]; then
       echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
       webhook_response=$(curl -s -X POST "$WEBHOOKTRAFFIC" \
-        -d "type=network&bytes_in_current=$current_total_in&bytes_in_diff=$total_in_diff&bytes_out_current=$current_total_out&bytes_out_diff=$total_out_diff&threshold=$THRESHOLD" 2>&1)
+        -d "type=network&bytes_in_current=$current_total_in&bytes_in_diff=$total_in_diff&bytes_out_current=$current_total_out&bytes_out_diff=$total_out_diff&threshold=$THRESHOLD&tcp_rcv_coalesce=$current_tcp_rcv_coalesce&tcp_rcv_coalesce_diff=$tcp_rcv_coalesce_diff&tcp_orig_data_sent=$current_tcp_orig_data_sent&tcp_orig_data_sent_diff=$tcp_orig_data_sent_diff&tcp_delivered=$current_tcp_delivered&tcp_delivered_diff=$tcp_delivered_diff" 2>&1)
       echo "WEBHOOK RESPONSE: $webhook_response"
     else
       echo "ALERT: Traffic increase detected but WEBHOOKTRAFFIC not defined."
