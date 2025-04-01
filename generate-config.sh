@@ -59,7 +59,7 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
-echo "--- ENVIRONMENT VARIABLES ver 1.02 ---"
+echo "--- ENVIRONMENT VARIABLES ver 1.03 ---"
 env | sort
 echo "--------------------------------------"
 
@@ -92,7 +92,7 @@ get_connection_count() {
   
   # Convert IP:port to hex format used in /proc/net/tcp
   local hex_port=$(printf "%04X" "$port")
-  local hex_ip=$(printf "%02X%02X%02X%02X" $(echo "$ip" | tr '"'"'."'"'" '"'"' '"'"'"))
+  local hex_ip=$(printf "%02X%02X%02X%02X" $(echo "$ip" | tr "." " "))
   
   # Count active connections to this destination
   local count=$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i "$hex_ip:$hex_port" | wc -l)
@@ -161,7 +161,7 @@ while true; do
         
         # Check if above threshold and alert if needed
         if [[ $diff -gt $THRESHOLD ]]; then
-          echo "ALERT: Connection traffic increase exceeds threshold ($THRESHOLD) for $var ($val): $prev_bytes → $curr_bytes (diff: $diff)"
+          echo "ALERT: Connection traffic increase exceeds threshold ($THRESHOLD) for $var ($val): $prev_bytes to $curr_bytes (diff: $diff)"
           
           if [[ -n "$WEBHOOKTRAFFIC" ]]; then
             echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
