@@ -59,21 +59,17 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
-echo "--- ENVIRONMENT VARIABLES ver 1.03 ---"
+# Keep container running and showing statistics
+echo "--- ENVIRONMENT VARIABLES ver 1.04 ---"
 env | sort
 echo "--------------------------------------"
 
 # Main monitoring loop
-exec bash -c 'declare -A prev_conn_count=(); declare -A connection_bytes=(); 
-
-# Initialize backend hosts tracking
-for var in $(env | grep -E "^BACKEND_HOST[0-9]+" | cut -d= -f1); do
-  val=$(eval echo \$$var)
-  if [[ -n "$val" ]]; then
-    prev_conn_count["$var"]=0
-    connection_bytes["$var"]=0
-  fi
-done
+exec bash -c '# Initialize traffic monitoring variables
+declare -A prev_in_octets=()
+declare -A prev_out_octets=()
+prev_total_in=0
+prev_total_out=0
 
 # Function to extract IP from IP:port format
 extract_ip() {
@@ -90,41 +86,53 @@ get_connection_count() {
   local ip="$1"
   local port="$2"
   
-  # Convert IP:port to hex format used in /proc/net/tcp
-  local hex_port=$(printf "%04X" "$port")
-  local hex_ip=$(printf "%02X%02X%02X%02X" $(echo "$ip" | tr "." " "))
-  
-  # Count active connections to this destination
-  local count=$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i "$hex_ip:$hex_port" | wc -l)
+  # Use netstat to count connections to this destination (works in unprivileged containers)
+  local count=$(netstat -an | grep -c "$ip:$port")
   echo "$count"
 }
 
-# Function to estimate bytes based on connection count
-estimate_bytes() {
-  local current_count="$1"
-  local previous_count="$2"
-  local previous_bytes="$3"
+# Function to get network statistics from netstat
+get_net_stats() {
+  # Extract InOctets and OutOctets from netstat -s
+  local in_octets=$(netstat -s | grep "InOctets:" | awk "{print \$2}")
+  local out_octets=$(netstat -s | grep "OutOctets:" | awk "{print \$2}")
   
-  if [[ "$current_count" -gt "$previous_count" ]]; then
-    # New connections - estimate 1000 bytes per new connection
-    local new_connections=$((current_count - previous_count))
-    echo $((previous_bytes + (new_connections * 1000)))
-  elif [[ "$current_count" -eq "$previous_count" && "$current_count" -gt 0 ]]; then
-    # Same connections - assume some activity
-    echo $((previous_bytes + (current_count * 500)))
-  else
-    # Fewer connections - keep existing bytes
-    echo "$previous_bytes"
-  fi
+  echo "$in_octets $out_octets"
 }
+
+# Get initial values
+initial_stats=($(get_net_stats))
+prev_total_in=${initial_stats[0]}
+prev_total_out=${initial_stats[1]}
+
+echo "Initial network stats - In: $prev_total_in bytes, Out: $prev_total_out bytes"
 
 while true; do 
   # Set default threshold if environment variable not set
   THRESHOLD=${WEBHOOKTRAFFICAMOUNT:-2000}
-  echo "$(date) - HAProxy Backend Connection Stats:"
+  timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+  echo "$timestamp - Traffic Monitoring:"
   echo "Current threshold for alerts: $THRESHOLD bytes"
   
-  # Show HAProxy frontend stats (for display only)
+  # Get current network statistics
+  current_stats=($(get_net_stats))
+  current_total_in=${current_stats[0]}
+  current_total_out=${current_stats[1]}
+  
+  # Calculate differences since last check
+  total_in_diff=$((current_total_in - prev_total_in))
+  total_out_diff=$((current_total_out - prev_total_out))
+  
+  # Update previous values
+  prev_total_in=$current_total_in
+  prev_total_out=$current_total_out
+  
+  # Show overall traffic statistics
+  echo -e "\n--- Overall Network Traffic ---"
+  echo "Total Incoming Bytes: $current_total_in (+$total_in_diff since last check)"
+  echo "Total Outgoing Bytes: $current_total_out (+$total_out_diff since last check)"
+  
+  # Show HAProxy frontend stats
   echo -e "\n--- HAProxy Frontend Stats ---"
   mapfile -t current_stats < <(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
   
@@ -136,7 +144,7 @@ while true; do
     printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n" "$frontend" "$connections" "$bytes_in" "$bytes_out";
   done
   
-  # Monitor direct backend connections
+  # Check backend connections
   echo -e "\n--- Backend Connection Stats ---"
   for var in $(env | grep -E "^BACKEND_HOST[0-9]+" | cut -d= -f1); do
     val=$(eval echo \$$var)
@@ -146,39 +154,27 @@ while true; do
       
       if [[ -n "$ip" && -n "$port" ]]; then
         # Get current connection count
-        curr_count=$(get_connection_count "$ip" "$port")
-        prev_count=${prev_conn_count[$var]:-0}
+        conn_count=$(get_connection_count "$ip" "$port")
         
-        # Estimate bytes based on connection count
-        prev_bytes=${connection_bytes[$var]:-0}
-        curr_bytes=$(estimate_bytes "$curr_count" "$prev_count" "$prev_bytes")
-        
-        # Calculate byte difference
-        diff=$((curr_bytes - prev_bytes))
-        
-        printf "%-15s | IP:Port: %-20s | Connections: %-5s | Est. Bytes: %-10s | Diff: +%-8s\n" \
-          "$var" "$val" "$curr_count" "$curr_bytes" "$diff"
-        
-        # Check if above threshold and alert if needed
-        if [[ $diff -gt $THRESHOLD ]]; then
-          echo "ALERT: Connection traffic increase exceeds threshold ($THRESHOLD) for $var ($val): $prev_bytes to $curr_bytes (diff: $diff)"
-          
-          if [[ -n "$WEBHOOKTRAFFIC" ]]; then
-            echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
-            webhook_response=$(curl -s -X POST "$WEBHOOKTRAFFIC" \
-              -d "host=$var&ip_port=$val&bytes_current=$curr_bytes&bytes_previous=$prev_bytes&bytes_diff=$diff&threshold=$THRESHOLD&conn_count=$curr_count" 2>&1)
-            echo "WEBHOOK RESPONSE: $webhook_response"
-          else
-            echo "ALERT: Traffic increase detected but WEBHOOKTRAFFIC not defined."
-          fi
-        fi
-        
-        # Update stored values
-        prev_conn_count[$var]=$curr_count
-        connection_bytes[$var]=$curr_bytes
+        printf "%-15s | IP:Port: %-20s | Active Connections: %-5s\n" \
+          "$var" "$val" "$conn_count"
       fi
     fi
   done
+  
+  # Check if incoming traffic exceeds threshold and send alert
+  if [[ $total_in_diff -gt $THRESHOLD ]]; then
+    echo "ALERT: Incoming traffic increase exceeds threshold ($THRESHOLD): +$total_in_diff bytes"
+    
+    if [[ -n "$WEBHOOKTRAFFIC" ]]; then
+      echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
+      webhook_response=$(curl -s -X POST "$WEBHOOKTRAFFIC" \
+        -d "type=network&bytes_in_current=$current_total_in&bytes_in_diff=$total_in_diff&bytes_out_current=$current_total_out&bytes_out_diff=$total_out_diff&threshold=$THRESHOLD" 2>&1)
+      echo "WEBHOOK RESPONSE: $webhook_response"
+    else
+      echo "ALERT: Traffic increase detected but WEBHOOKTRAFFIC not defined."
+    fi
+  fi
   
   echo "----------------------------------------"; 
   sleep 60; 
