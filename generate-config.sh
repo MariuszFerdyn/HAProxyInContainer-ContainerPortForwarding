@@ -59,6 +59,9 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
+echo "--- ENVIRONMENT VARIABLES ver 1.01 ---"
+env | sort
+echo "--------------------------------------"
 exec bash -c 'declare -A prev_bytes_in=(); declare -A prev_bytes_out=(); while true; do 
   echo "$(date) - HAProxy Frontend Stats:"; 
   mapfile -t current_stats < <(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
