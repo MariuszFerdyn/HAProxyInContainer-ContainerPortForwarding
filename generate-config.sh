@@ -59,7 +59,8 @@ if [ -n "${WEBHOOKAFTERSTART+x}" ]; then
 fi
 
 # Keep container running and showing statistics
-echo "--- ENVIRONMENT VARIABLES ver 1.04 ---"
+# Keep container running and showing statistics
+echo "--- ENVIRONMENT VARIABLES ver 1.05 ---"
 env | sort
 echo "--------------------------------------"
 
@@ -114,11 +115,11 @@ echo "Initial network stats - In: $prev_total_in bytes, Out: $prev_total_out byt
 echo "Initial TCP stats - RcvCoalesce: $prev_tcp_rcv_coalesce, OrigDataSent: $prev_tcp_orig_data_sent, Delivered: $prev_tcp_delivered"
 
 while true; do 
-  # Set default threshold if environment variable not set
-  THRESHOLD=${WEBHOOKTRAFFICAMOUNT:-2000}
+  # Set default threshold if environment variable not set - using 100 as default
+  THRESHOLD=${WEBHOOKTRAFFICAMOUNT:-100}
   timestamp=$(date "+%Y-%m-%d %H:%M:%S")
   echo "$timestamp - Traffic Monitoring:"
-  echo "Current threshold for alerts: $THRESHOLD bytes"
+  echo "Current threshold for alerts (TCPOrigDataSent): $THRESHOLD"
   
   # Get current network statistics
   current_stats=($(get_net_stats))
@@ -151,17 +152,25 @@ while true; do
   echo "TCPOrigDataSent: $current_tcp_orig_data_sent (+$tcp_orig_data_sent_diff)"
   echo "TCPDelivered: $current_tcp_delivered (+$tcp_delivered_diff)"
   
-  # Show HAProxy frontend stats
+  # Show HAProxy frontend stats if socket is available
   echo -e "\n--- HAProxy Frontend Stats ---"
-  mapfile -t current_stats < <(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio | grep "FRONTEND"); 
-  
-  for line in "${current_stats[@]}"; do
-    frontend=$(echo "$line" | cut -d, -f1);
-    bytes_in=$(echo "$line" | cut -d, -f8);
-    bytes_out=$(echo "$line" | cut -d, -f9);
-    connections=$(echo "$line" | cut -d, -f7);
-    printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n" "$frontend" "$connections" "$bytes_in" "$bytes_out";
-  done
+  if [ -S /var/run/haproxy.sock ]; then
+    mapfile -t current_stats < <(echo "show stat" | socat unix-connect:/var/run/haproxy.sock stdio 2>/dev/null | grep "FRONTEND");
+    
+    if [ ${#current_stats[@]} -gt 0 ]; then
+      for line in "${current_stats[@]}"; do
+        frontend=$(echo "$line" | cut -d, -f1);
+        bytes_in=$(echo "$line" | cut -d, -f8);
+        bytes_out=$(echo "$line" | cut -d, -f9);
+        connections=$(echo "$line" | cut -d, -f7);
+        printf "%-15s | Connections: %-6s | Bytes In: %-10s | Bytes Out: %-10s\n" "$frontend" "$connections" "$bytes_in" "$bytes_out";
+      done
+    else
+      echo "No frontend statistics available from HAProxy"
+    fi
+  else
+    echo "HAProxy socket not found at /var/run/haproxy.sock - skipping HAProxy stats"
+  fi
   
   # Check backend connections
   echo -e "\n--- Backend Connection Stats ---"
@@ -181,13 +190,13 @@ while true; do
     fi
   done
   
-  # Check if incoming traffic exceeds threshold and send alert
-  if [[ $total_in_diff -gt $THRESHOLD ]]; then
-    echo "ALERT: Incoming traffic increase exceeds threshold ($THRESHOLD): +$total_in_diff bytes"
+  # Check if TCPOrigDataSent exceeds threshold and send alert
+  if [[ $tcp_orig_data_sent_diff -gt $THRESHOLD ]]; then
+    echo "ALERT: TCP data sent increase exceeds threshold ($THRESHOLD): +$tcp_orig_data_sent_diff"
     
     if [[ -n "$WEBHOOKTRAFFIC" ]]; then
       echo "DEBUG: Using webhook URL: $WEBHOOKTRAFFIC"
-      webhook_response=$(curl -s -X POST "$WEBHOOKTRAFFIC" \
+      webhook_response=$(curl -v -k -s -X POST "$WEBHOOKTRAFFIC" \
         -d "type=network&bytes_in_current=$current_total_in&bytes_in_diff=$total_in_diff&bytes_out_current=$current_total_out&bytes_out_diff=$total_out_diff&threshold=$THRESHOLD&tcp_rcv_coalesce=$current_tcp_rcv_coalesce&tcp_rcv_coalesce_diff=$tcp_rcv_coalesce_diff&tcp_orig_data_sent=$current_tcp_orig_data_sent&tcp_orig_data_sent_diff=$tcp_orig_data_sent_diff&tcp_delivered=$current_tcp_delivered&tcp_delivered_diff=$tcp_delivered_diff" 2>&1)
       echo "WEBHOOK RESPONSE: $webhook_response"
     else
