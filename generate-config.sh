@@ -12,8 +12,8 @@ global
 defaults
     mode tcp
     timeout connect 5000ms
-    timeout client 50000ms
-    timeout server 50000ms
+    timeout client 3600000ms    # increase to 1 hour
+    timeout server 3600000ms    # increase to 1 hour
 
 EOF
 
